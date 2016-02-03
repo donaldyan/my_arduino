@@ -46,12 +46,26 @@ void setup() {
  }
 
 void loop () {
-
-  sm_servo_test();
-
-  motor_servo_test();
-
+  int distance;
+  
+  //sm_servo_test();
+  //motor_servo_test();
   //sr04_test();
+
+  // 1. check distance right in the front
+  // 2. if distance is less than 10cm, then 
+  //      turn right for 5 seconds and goto step 1
+  //    otherwise  move for 2 seconds, and goto step 1
+
+  distance = sr04_check();
+
+  if ( distance < 10 ) {
+    RightRotate();RightRotate();
+  }
+  else {
+    Forward();Forward();
+  }
+  
 }
 
 void sm_servo_test() {
@@ -74,6 +88,31 @@ void sm_servo_test() {
     sm_servo.write(sm_pos);              // tell servo to go to position in variable 'pos'
     delay(15);                       // waits 15ms for the servo to reach the position
   }
+}
+
+int sr04_check() {
+  long duration, distance;
+
+  digitalWrite(SR04_TRIG_PIN, LOW);  // Added this line
+  delayMicroseconds(2); // Added this line
+  digitalWrite(SR04_TRIG_PIN, HIGH);
+//  delayMicroseconds(1000); - Removed this line
+  delayMicroseconds(10); // Added this line
+  digitalWrite(SR04_TRIG_PIN, LOW);
+  duration = pulseIn(SR04_ECHO_PIN, HIGH);
+  distance = (duration/2) / 29.1;
+
+  if (distance >= 200 || distance <= 0){
+    Serial.println("Out of range");
+  }
+  else {
+    Serial.print(distance);
+    Serial.println(" cm");
+  }
+  
+  delay(100);
+
+  return distance;
 }
 
 void sr04_test() {
