@@ -3,7 +3,6 @@
 
 #include "ESP8266WiFi.h"
 
-char buffer[20];
 //char* password = "WiFi Password/Phrase Here";
 char* password = "2512825926";
 //char* ssid     = "SSID of your wireless router";
@@ -53,10 +52,6 @@ void loop()
       {
         // Connection success
         Serial.println("Connected OK");
-        IPAddress ip = WiFi.localIP(); // // Convert IP Here
-        String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-        ipStr.toCharArray(buffer, 20);
-        Serial.println(ipStr);
       }
       else
       {
