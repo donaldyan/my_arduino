@@ -1,3 +1,6 @@
+// http://iot-playground.com/2-uncategorised/38-esp8266-and-arduino-ide-blink-example
+// https://www.hackster.io/rayburne/esp8266-01-using-arduino-ide-67a124
+
 #include "ESP8266WiFi.h"
 
 char buffer[20];
