@@ -22,11 +22,11 @@ void loop() {
   Backward();
   delay(2000);
 
-  RightRotate();
-  delay(2000);
+//  RightRotate();
+//  delay(2000);
   
-  LeftRotate();
-  delay(2000);
+//  LeftRotate();
+//  delay(2000);
 }
 
 void Forward() {
