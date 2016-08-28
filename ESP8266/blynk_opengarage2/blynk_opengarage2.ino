@@ -23,7 +23,9 @@ char uptime_string[16];
 #define SR04_TRIG_PIN   12
 #define SR04_ECHO_PIN   13
 long sr04_echo = 0;
-int door_open=0;  
+int door_open=0; 
+int sr04_count_max=3; 
+
 
 
 //************************** Just Some basic Definitions used for the Up Time LOgger ************//
@@ -47,6 +49,8 @@ void setup()
 
 void loop()
 {
+  int sr04_count;
+  
   Blynk.run();
 
 //  Serial.print("garage_pin: ");
@@ -61,13 +65,18 @@ void loop()
   Serial.println(" cm");
 //  Serial.println("#################");  
   if ( sr04_echo < 65 && door_open == 0 ) { // door open detected first time 
-    door_open = 1;
-    led.on();
-    Blynk.email("donaldyan@gmail.com", "GARAGE DOOR OPEN!", "Garage door has been opened.");
+    sr04_count++;
+    if ( sr04_count == sr04_count_max ) {  // for some reason, sr04 can randomly measured distance less then 65cm even though when it should be more than 200cm
+                                          // if for sr04_count_max times, it measures less than 65cm, treat it as valid values
+      door_open = 1;
+      led.on();
+      Blynk.email("donaldyan@gmail.com", "GARAGE DOOR OPEN!", "Garage door has been opened.");
+    }
   }
   else if ( sr04_echo >= 65 && door_open == 1 ) { // door close detected first time
     door_open = 0;
     led.off();
+    sr04_count = 0;
   }
 
   delay(1000);
@@ -80,8 +89,10 @@ BLYNK_READ(V0)
   Serial.println(sr04_echo);    
 }
 
-long sr04_check() {
-  long duration, distance;
+// there seems like a probelm with float type calculation in esp8266. and wifi/socket always got disconnected when distance is more than 5cm.
+// change from 29.1 to 29 instead
+int sr04_check() {
+  int duration, distance;
 
   digitalWrite(SR04_TRIG_PIN, LOW);  // Added this line
   delayMicroseconds(2); // Added this line
@@ -90,7 +101,7 @@ long sr04_check() {
   delayMicroseconds(10); // Added this line
   digitalWrite(SR04_TRIG_PIN, LOW);
   duration = pulseIn(SR04_ECHO_PIN, HIGH);
-  distance = (duration/2) / 29.1;
+  distance = (duration/2)/29.1;
 
 //  Serial.print("sr04_check: ");
 //  Serial.print(distance);
