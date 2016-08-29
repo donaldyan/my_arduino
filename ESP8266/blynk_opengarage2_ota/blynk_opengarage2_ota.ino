@@ -281,8 +281,10 @@ void print_Uptime(){
 //******************************  Boot Setup **************************************//
 void setup()
 {
-  String station_ssid = "ATT283";
-  String station_psk = "2512825926";
+//  String station_ssid = "ATT283";
+//  String station_psk = "2512825926";
+  String station_ssid = "2WIRE844";
+  String station_psk = "8914303083";
 //  String station_ssid = "TripMateNano-18A4";
 //  String station_psk = "11111111";
 
@@ -415,8 +417,8 @@ void setup()
   });
   ArduinoOTA.begin();
 
-  Blynk.begin(auth, "ATT283", "2512825926");
-  //Blynk.config(auth);
+  //Blynk.begin(auth, "ATT283", "2512825926");
+  Blynk.config(auth);
 
   startTime = millis();
   while (Blynk.connect() == false && millis() - startTime < 60000) {
