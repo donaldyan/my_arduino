@@ -440,7 +440,7 @@ void setup()
   // your hardware gets connected to Blynk Server
   terminal.println(F("Blynk v" BLYNK_VERSION ": Device started"));
   terminal.println("-------------");
-  terminal.println("C opengarage2_ota sketch");
+  terminal.println("B opengarage2_ota sketch");
   terminal.flush();
 
   //pinMode(garage_pin, OUTPUT);

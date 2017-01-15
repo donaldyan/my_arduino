@@ -1,26 +1,16 @@
-#define BLYNK_PRINT Serial    // Comment this out to disable prints and save space
+
+#define BLYNK_PRINT Serial        // Comment this out to disable prints and save space
 #include <stdio.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
+#include <ESP8266WiFi.h>          // https://github.com/esp8266/Arduino
+#include <BlynkSimpleEsp8266.h>
+#include <ESP8266WebServer.h>     // Local WebServer used to serve the configuration portal
+#include <DNSServer.h>            // Local DNS Server used for redirecting all requests to the configuration portal
+#include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 #include <WiFiUdp.h>
 #include <FS.h>
-#include <ArduinoOTA.h>
-#include <BlynkSimpleEsp8266.h>
+#include <SimpleTimer.h>
 
-/**
- * @brief mDNS and OTA Constants
- * @{
- */
-#define HOSTNAME "ESP8266-OTA-" ///< Hostename. The setup function adds the Chip ID at the end.
-/// @}
-
-/**
- * @brief Default WiFi connection information.
- * @{
- */
-const char* ap_default_ssid = "esp8266"; ///< Default SSID.
-const char* ap_default_psk = "esp8266esp8266"; ///< Default PSK.
-/// @}
+#define HOSTNAME "ESP8266-"
 
 /// Uncomment the next line for verbose output over UART.
 //#define SERIAL_VERBOSE
@@ -28,9 +18,9 @@ const char* ap_default_psk = "esp8266esp8266"; ///< Default PSK.
 //*********************** Blynk ***************************************************************//
 // You should get Auth Token in the Blynk App.
 // Go to the Project Settings (nut icon).
-char auth[] = "9a60b2e42d764b7ab9a83bdaa4456636";   // opengarage3
+//char auth[] = "9a60b2e42d764b7ab9a83bdaa4456636";   // opengarage3
 //char auth[] = "04fbed8623924761853ccb3d50527391";   // opengarage2
-//char auth[] = "9922b2579c48421f8a18a0068a6d8ccd";     // opengarage
+char auth[] = "9922b2579c48421f8a18a0068a6d8ccd";     // opengarage
 
 //V0 is Pin 14
 WidgetLED led(V1);
@@ -38,7 +28,10 @@ WidgetLCD lcd(V2);
 // Attach virtual serial terminal to Virtual Pin V3
 WidgetTerminal terminal(V3);
 
+SimpleTimer timer;
+
 char uptime_string[16];
+String email_subject;
 
 //************************** Just Some basic Definitions used for the Up Time LOgger ************//
 long Day=0;
@@ -65,101 +58,6 @@ int sr04_count_max=4;
 int sr04_count;
 int door_open_dist = 65;
 
-
-/**
- * @brief Read WiFi connection information from file system.
- * @param ssid String pointer for storing SSID.
- * @param pass String pointer for storing PSK.
- * @return True or False.
- * 
- * The config file have to containt the WiFi SSID in the first line
- * and the WiFi PSK in the second line.
- * Line seperator can be \r\n (CR LF) \r or \n.
- */
-bool loadConfig(String *ssid, String *pass)
-{
-  // open file for reading.
-  File configFile = SPIFFS.open("/cl_conf.txt", "r");
-  if (!configFile)
-  {
-    Serial.println("Failed to open cl_conf.txt.");
-
-    return false;
-  }
-
-  // Read content from config file.
-  String content = configFile.readString();
-  configFile.close();
-  
-  content.trim();
-
-  // Check if ther is a second line available.
-  int8_t pos = content.indexOf("\r\n");
-  uint8_t le = 2;
-  // check for linux and mac line ending.
-  if (pos == -1)
-  {
-    le = 1;
-    pos = content.indexOf("\n");
-    if (pos == -1)
-    {
-      pos = content.indexOf("\r");
-    }
-  }
-
-  // If there is no second line: Some information is missing.
-  if (pos == -1)
-  {
-    Serial.println("Infvalid content.");
-    Serial.println(content);
-
-    return false;
-  }
-
-  // Store SSID and PSK into string vars.
-  *ssid = content.substring(0, pos);
-  *pass = content.substring(pos + le);
-
-  ssid->trim();
-  pass->trim();
-
-#ifdef SERIAL_VERBOSE
-  Serial.println("----- file content -----");
-  Serial.println(content);
-  Serial.println("----- file content -----");
-  Serial.println("ssid: " + *ssid);
-  Serial.println("psk:  " + *pass);
-#endif
-
-  return true;
-} // loadConfig
-
-
-/**
- * @brief Save WiFi SSID and PSK to configuration file.
- * @param ssid SSID as string pointer.
- * @param pass PSK as string pointer,
- * @return True or False.
- */
-bool saveConfig(String *ssid, String *pass)
-{
-  // Open config file for writing.
-  File configFile = SPIFFS.open("/cl_conf.txt", "w");
-  if (!configFile)
-  {
-    Serial.println("Failed to open cl_conf.txt for writing");
-
-    return false;
-  }
-
-  // Save SSID and PSK.
-  configFile.println(*ssid);
-  configFile.println(*pass);
-
-  configFile.close();
-  
-  return true;
-} // saveConfig
 
 BLYNK_READ(V0)
 {
@@ -282,13 +180,6 @@ void print_Uptime(){
 //******************************  Boot Setup **************************************//
 void setup()
 {
-  String station_ssid = "ATT283";
-  String station_psk = "2512825926";
-//  String station_ssid = "2WIRE844";
-//  String station_psk = "8914303083";
-//  String station_ssid = "TripMateNano-18A4";
-//  String station_psk = "11111111";
-
   Serial.begin(115200);
 
   delay(100);
@@ -300,128 +191,23 @@ void setup()
   // Set Hostname.
   String hostname(HOSTNAME);
   hostname += String(ESP.getChipId(), HEX);
-  WiFi.hostname(hostname);
 
   // Print hostname.
   Serial.println("Hostname: " + hostname);
   //Serial.println(WiFi.hostname());
 
-
-  // Check WiFi connection
-  // ... check mode
-  if (WiFi.getMode() != WIFI_STA)
-  {
-    WiFi.mode(WIFI_STA);
-    delay(10);
-  }
-
-  // ... Compare file config with sdk config.
-  if (WiFi.SSID() != station_ssid || WiFi.psk() != station_psk)
-  {
-    Serial.println("WiFi config changed.");
-
-    // ... Try to connect to WiFi station.
-    WiFi.begin(station_ssid.c_str(), station_psk.c_str());
-
-    // ... Pritn new SSID
-    Serial.print("new SSID: ");
-    Serial.println(WiFi.SSID());
-
-    // ... Uncomment this for debugging output.
-    //WiFi.printDiag(Serial);
-
-#if 0
-    // save new settings into flash
-    // Initialize file system.
-    if (!SPIFFS.begin())
-    {
-      Serial.println("Failed to mount file system");
-      return;
-    }
-    // Load wifi connection information.
-    if (! loadConfig(&station_ssid, &station_psk))
-    {
-      station_ssid = "";
-      station_psk = "";
-
-      Serial.println("No WiFi connection information available.");
-    }
-#endif     
-  }
-  else
-  {
-    // ... Begin with sdk config.
-    WiFi.begin();
-  }
-
-  Serial.println("Wait for WiFi connection.");
-
-  // ... Give ESP 120 seconds to connect to station.
-  unsigned long startTime = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startTime < 120000)
-  {
-    Serial.write('.');
-    //Serial.print(WiFi.status());
-    delay(500);
-  }
-  Serial.println();
-
-  // Check connection
-  if(WiFi.status() == WL_CONNECTED)
-  {
-    // ... print IP Address
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  }
-  else
-  {
-    Serial.println("Can not connect to WiFi station. Go into AP mode.");
-    
-    // Go into software AP mode.
-    WiFi.mode(WIFI_AP);
-
-    delay(10);
-
-    WiFi.softAP(ap_default_ssid, ap_default_psk);
-
-    Serial.print("IP address: ");
-    Serial.println(WiFi.softAPIP());
-  }
+  // start wifi manager
+  WiFiManager wifiManager;
+  //first parameter is name of local access point, second is the password
+  wifiManager.autoConnect(HOSTNAME, "esp8266!");
+  // After ESP starts, it will try to connect to WiFi. If it fails it starts in Access Point mode. While in AP mode, 
+  // connect to it then open a browser to the gateway IP, default 192.168.4.1, configure wifi, save and 
+  // it should reboot and connect. 
   
-  // Start OTA server.
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
-
-  // Hostname defaults to esp8266-[ChipID]
-  // ArduinoOTA.setHostname("myesp8266");
-  ArduinoOTA.setHostname((const char *)hostname.c_str());
-
-  // No authentication by default
-  // ArduinoOTA.setPassword((const char *)"123");
-
-  ArduinoOTA.onStart([]() {
-    Serial.println("Start");
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("End");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\n", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed");
-  });
-  ArduinoOTA.begin();
-
   //Blynk.begin(auth, "ATT283", "2512825926");
   Blynk.config(auth);
 
-  startTime = millis();
+  unsigned long startTime = millis();
   while (Blynk.connect() == false && millis() - startTime < 60000) {
     // Wait until connected
     Serial.write("Waiting ... for Blynk ...");
@@ -440,24 +226,22 @@ void setup()
   // your hardware gets connected to Blynk Server
   terminal.println(F("Blynk v" BLYNK_VERSION ": Device started"));
   terminal.println("-------------");
-  terminal.println("C opengarage2_ota sketch");
+  terminal.println("opengarage3 sketch");
   terminal.flush();
 
   //pinMode(garage_pin, OUTPUT);
   pinMode(SR04_ECHO_PIN, INPUT);
   pinMode(SR04_TRIG_PIN, OUTPUT);
   led.off();
+
+  email_subject = String(WiFi.hostname());
+  email_subject += " - GARAGE DOOR OPEN!";
+
+  timer.setInterval(2000, check_door_status);
 }
 
-//*************** MAIN LOOP *********************************************************//
-void loop()
-{  
-  Blynk.run();
-  String email_subject = String(WiFi.hostname());
-
-//  Serial.print("garage_pin: ");
-//  Serial.println(garage_state);
-
+void check_door_status()
+{
   uptime(); //Runs the uptime script located below the main loop and reenters the main loop
   print_Uptime();
 
@@ -472,7 +256,7 @@ void loop()
                                           // if for sr04_count_max times, it measures less than 65cm, treat it as valid values
       door_open = 1;
       led.on();
-      email_subject += " - GARAGE DOOR OPEN!";
+      
       Blynk.email("donaldyan@gmail.com",  email_subject.c_str(), "Garage door has been opened.");
       //Blynk.email("donaldyan@yahoo.com",  "GARAGE DOOR 2 OPEN!", "Garage door has been opened.");
       Serial.println("email sent!");      
@@ -485,11 +269,19 @@ void loop()
   } else {
     sr04_count = 0;
   }
+}
 
-  delay(1000);
+//*************** MAIN LOOP *********************************************************//
+void loop()
+{  
+  Blynk.run();
+  timer.run();
 
-  // Handle OTA server.
-  ArduinoOTA.handle();
+//  Serial.print("garage_pin: ");
+//  Serial.println(garage_state);
+
+//  delay(1000);
+
 //  yield();
 
 }
