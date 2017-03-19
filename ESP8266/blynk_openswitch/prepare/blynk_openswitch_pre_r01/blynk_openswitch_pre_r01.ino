@@ -1,6 +1,7 @@
 #define BLYNK_PRINT Serial    // Comment this out to disable prints and save space
 #include <stdio.h>
 #include <ESP8266WiFi.h>
+//#include "fauxmoESP.h"
 #include <BlynkSimpleEsp8266.h>
 #include <ESP8266WebServer.h>     // Local WebServer used to serve the configuration portal
 #include <DNSServer.h>            // Local DNS Server used for redirecting all requests to the configuration portal
@@ -8,25 +9,22 @@
 #include <WiFiUdp.h>
 #include <FS.h>
 #include <ArduinoOTA.h>
-#include <SimpleTimer.h>
 #include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 
 #define HOSTNAME "ESP8266-OTA-"
-#define OPENGARAGE_VERSION "opengarage4_ota"           
+#define OPENGARAGE_VERSION "openswitch01_ota"           
                                                                                                                
 /// Uncomment the next line for verbose output over UART.
 //#define SERIAL_VERBOSE
+
+//fauxmoESP fauxmo;
 
 //*********************** Blynk ***************************************************************//
 // You should get Auth Token in the Blynk App.
 // Go to the Project Settings (nut icon).
 //define your default values here, if there are different values in config.json, they are overwritten.
-//char mqtt_server[40];
-//char mqtt_port[6] = "8080";
-char blynk_token[34] = "9a60b2e42d764b7ab9a83bdaa4456636";
-//char auth[] = "9a60b2e42d764b7ab9a83bdaa4456636";   // opengarage3-device03 - test
-//char auth[] = "04fbed8623924761853ccb3d50527391";   // opengarage2-device02 - lily
-//char auth[] = "9922b2579c48421f8a18a0068a6d8ccd";   // opengarage-device01 - whirlaway
+char blynk_token[34] = "9db8f76084db4ba7a0bb141412b2c4f2";
+//char auth[] = "9db8f76084db4ba7a0bb141412b2c4f2";   // openswitch - test
 
 //flag for saving data
 bool shouldSaveConfig = false;
@@ -37,16 +35,14 @@ void saveConfigCallback () {
   shouldSaveConfig = true;
 }
 
-//V0 is Pin 14
-WidgetLED led(V1);
+// V0: is phy Pin 2
+// V2: attach LCD to virtual pin V2
 WidgetLCD lcd(V2);
-// Attach virtual serial terminal to Virtual Pin V3
+// V3: Attach virtual serial terminal to Virtual Pin V3
 WidgetTerminal terminal(V3);
 
 WiFiManager wifiManager;
   
-SimpleTimer timer;
-
 char uptime_string[16];
 String email_subject;
 
@@ -59,28 +55,23 @@ int HighMillis=0;
 int Rollover=0;
 
 //
-// garage control pin
+// relay control pin
 //
-//int garage_pin = 14;
-int garage_state = 0;  /* 0: close; 1: open */
+int relay_pin = 2;
+int relay_state = 0;  /* 0: close; 1: open */
 
-//
-// HC-SR04
-//
-#define SR04_TRIG_PIN   12
-#define SR04_ECHO_PIN   13
-long sr04_echo = 0;
-int door_open=0; 
-int sr04_count_max=4; 
-int sr04_count;
-int door_open_dist = 65;
-
-
-BLYNK_READ(V0)
+BLYNK_WRITE(V0)
 {
-  Blynk.virtualWrite(V0, sr04_echo);
-  Serial.print("READ V0: ");
-  Serial.println(sr04_echo);    
+  int pinData = param.asInt(); 
+  Serial.printf("Button pressed: %d\t - ", pinData);
+  if ( pinData == 1 ) {
+    Serial.printf("On\n");
+    digitalWrite(relay_pin, HIGH);
+  }
+  else {
+    Serial.printf("Off\n");
+    digitalWrite(relay_pin, LOW);
+  }
 }
 
 BLYNK_WRITE(V3)
@@ -93,10 +84,6 @@ BLYNK_WRITE(V3)
     terminal.println("You said: 'Marco'") ;
     terminal.println("I said: 'Polo'") ;
   } 
-  else if (String("sr04") == param.asStr()) {
-    terminal.print("sr04_count_max=");terminal.println(sr04_count_max);
-    terminal.print("sr04_count=");terminal.println(sr04_count);
-  }
   else if (String("version") == param.asStr()) {
     terminal.println(OPENGARAGE_VERSION);
   }
@@ -129,46 +116,10 @@ BLYNK_WRITE(V3)
     terminal.print("You said:");
     terminal.write(param.getBuffer(), param.getLength());
     terminal.println();
-    if ( 0 == strncmp("sr04", param.asStr(), 4) ) {
-      strncpy(buf, param.asStr(),31); buf[31]='\0';
-      ptr +=5; // "sr04=10" or "sr04 10" both can set sr04_count_max value
-      sr04_count_max=atoi(ptr);
-    }
-    else if ( 0 == strncmp("dist", param.asStr(), 4) ) {
-      strncpy(buf, param.asStr(),31); buf[31]='\0';
-      ptr +=5; // "dist=40" or "sr04 40" both can set door_open_dist value in cm
-      door_open_dist=atoi(ptr);
-    }
   }
 
   // Ensure everything is sent
   terminal.flush();
-}
-
-// there seems like a probelm with float type calculation in esp8266. and wifi/socket always got disconnected when distance is more than 5cm.
-// change from 29.1 to 29 instead
-int sr04_check() {
-  int duration, distance;
-
-  digitalWrite(SR04_TRIG_PIN, LOW);  // Added this line
-  delayMicroseconds(2); // Added this line
-  digitalWrite(SR04_TRIG_PIN, HIGH);
-//  delayMicroseconds(1000); - Removed this line
-  delayMicroseconds(10); // Added this line
-  digitalWrite(SR04_TRIG_PIN, LOW);
-  duration = pulseIn(SR04_ECHO_PIN, HIGH);
-  distance = (duration/2)/29.1;
-
-//  Serial.print("sr04_check: ");
-//  Serial.print(distance);
-//  Serial.println(" cm");
-
-  if (distance >= 200 || distance <= 0)
-    Serial.println("Out of range");
-  
-//  delay(100);
-
-  return distance;
 }
 
 //************************ Uptime Code - Makes a count of the total up time since last start ****************//
@@ -410,62 +361,50 @@ void setup()
   terminal.print(OPENGARAGE_VERSION); terminal.println(" sketch");
   terminal.flush();
 
-  //pinMode(garage_pin, OUTPUT);
-  pinMode(SR04_ECHO_PIN, INPUT);
-  pinMode(SR04_TRIG_PIN, OUTPUT);
-  led.off();
-
+  pinMode(relay_pin, OUTPUT);
+  //delay(1000);digitalWrite(relay_pin, LOW);
+   
   email_subject = String(WiFi.hostname());
   email_subject += " - GARAGE DOOR OPEN!";
 
-  timer.setInterval(2000, check_door_status);
-}
+  // Fauxmo
+  //fauxmo.addDevice("light one");
+  //fauxmo.addDevice("light two");
+  //fauxmo.addDevice("light three");
+  //fauxmo.addDevice("light four");
+  
+  // fauxmoESP 2.0.0 has changed the callback signature to add the device_id, this WARRANTY
+  // it's easier to match devices to action without having to compare strings.
+  //fauxmo.onMessage([](unsigned char device_id, const char * device_name, bool state) {
+  //  Serial.printf("[MAIN] Device #%d (%s) state: %s\n", device_id, device_name, state ? "ON" : "OFF");
+    //digitalWrite(relay_pin, !state);
+  //  });
 
-void check_door_status()
-{
-  uptime(); //Runs the uptime script located below the main loop and reenters the main loop
-  print_Uptime();
-
-  sr04_echo = sr04_check();
-  Serial.print("sr04_echo: ");
-  Serial.print(sr04_echo);
-  Serial.println(" cm");
-//  Serial.println("#################");  
-  if ( sr04_echo < door_open_dist && door_open == 0 ) { // door open detected first time 
-    sr04_count++;
-    if ( sr04_count >= sr04_count_max ) {  // for some reason, sr04 can randomly measured distance less then 65cm even though when it should be more than 200cm
-                                          // if for sr04_count_max times, it measures less than 65cm, treat it as valid values
-      door_open = 1;
-      led.on();
-      
-      Blynk.email("donaldyan@gmail.com",  email_subject.c_str(), "Garage door has been opened.");
-      //Blynk.email("donaldyan@yahoo.com",  "GARAGE DOOR 2 OPEN!", "Garage door has been opened.");
-      Serial.println("email sent!");      
-    }
-  }
-  else if ( sr04_echo >= door_open_dist && door_open == 1 ) { // door close detected first time
-    door_open = 0;
-    led.off();
-    sr04_count = 0;
-  } else {
-    sr04_count = 0;
-  }
 }
 
 //*************** MAIN LOOP *********************************************************//
 void loop()
 {  
   Blynk.run();
-  timer.run();
-
-//  Serial.print("garage_pin: ");
-//  Serial.println(garage_state);
-
-//  delay(1000);
 
   // Handle OTA server.
   ArduinoOTA.handle();
-//  yield();
+
+  // Since fauxmoESP 2.0 the library uses the "compatibility" mode by
+  // default, this means that it uses WiFiUdp class instead of AsyncUDP.
+  // The later requires the Arduino Core for ESP8266 staging version
+  // whilst the former works fine with current stable 2.3.0 version.
+  // But, since it's not "async" anymore we have to manually poll for UDP
+  // packets
+  //fauxmo.handle();
+
+
+  //static unsigned long last = millis();
+  //if (millis() - last > 5000) {
+  //    last = millis();
+  //    Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+  //}
+
 
 }
 
